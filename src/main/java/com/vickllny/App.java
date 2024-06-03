@@ -4,43 +4,61 @@ import com.vickllny.cl.DynamicClassLoader;
 import com.vickllny.domain.User;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.agent.ByteBuddyAgent;
-import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
-import net.bytebuddy.dynamic.loading.ClassReloadingStrategy;
-import net.bytebuddy.implementation.FixedValue;
+import net.bytebuddy.description.modifier.Visibility;
+import net.bytebuddy.implementation.MethodDelegation;
+import net.bytebuddy.implementation.bind.annotation.*;
 import net.bytebuddy.matcher.ElementMatchers;
+import org.springframework.util.ReflectionUtils;
 
-import java.lang.instrument.Instrumentation;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
 
 public class App {
 
     static final List<DynamicClassLoader> LOADER_LIST = new ArrayList<>();
     static final List<User> USER_LIST = new ArrayList<>();
 
-    public static void main(String[] args) {
-        // 使用 Byte Buddy 创建 User 类的子类
-//        Class<? extends User> dynamicUserSubclass = new ByteBuddy()
-//                .subclass(User.class)
-//                .name("com.example.DynamicUser")
-//                .method(ElementMatchers.named("getUserName"))
-//                .intercept(FixedValue.value("DynamicUserName"))
-//                .make()
-//                .load(App.class.getClassLoader(), ClassLoadingStrategy.Default.INJECTION)
-//                .getLoaded();
-        System.out.println("hello world");
-
+    public static void main(String[] args) throws InstantiationException, IllegalAccessException {
         ByteBuddyAgent.install();
-        // 删除 User 类的 password 字段
-        new ByteBuddy()
-                .redefine(User.class)
-                .name(User.class.getName())
-                .field(ElementMatchers.named("password"))
-                .value(null)
+        // 创建 User 类的子类并拦截所有方法调用
+        Class<? extends User> dynamicUserClass = new ByteBuddy()
+                .subclass(User.class)
+                .defineProperty("userId", String.class)
+                .method(ElementMatchers.isGetter().or(ElementMatchers.isSetter())) // 拦截所有方法
+                .intercept(MethodDelegation.to(MethodInterceptor.class))
                 .make()
-                .load(User.class.getClassLoader(), ClassReloadingStrategy.fromInstalledAgent());
+                .load(User.class.getClassLoader())
+                .getLoaded();
 
-        User user = new User();
-        System.out.printf("user =>" + user);
+        // 实例化动态生成的子类
+        User user = dynamicUserClass.newInstance();
+        user.setsUserName("TestUser");
+        user.setsPassword("TestPassword");
+        ReflectionUtils.
+    }
+    public static class MethodInterceptor {
+        @RuntimeType
+        public static Object intercept(@This Object instance,
+                                       @SuperCall Callable<?> superMethod,
+                                       @AllArguments Object[] args,
+                                       @Origin Method method) throws Exception {
+            System.out.println("Method intercepted!");
+
+            // 获取当前实例
+            System.out.println("Current instance: " + instance);
+
+            // 调用原方法
+            Object result = superMethod.call();
+
+            // 可以在这里对返回值进行处理
+            if (result instanceof String) {
+                return "Intercepted: " + result;
+            }
+
+            return result;
+        }
     }
 }
